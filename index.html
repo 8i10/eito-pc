@@ -66,7 +66,10 @@ button{ font-family:inherit; cursor:pointer; }
 .toggle{ display:inline-flex; align-items:center; gap:7px; font-size:12.5px; color:var(--soft);
   cursor:pointer; user-select:none; padding:6px 2px; white-space:nowrap; }
 .toggle input{ accent-color:var(--accent); width:15px; height:15px; }
-#addChar{ margin-left:auto; }
+#sortBtn{ margin-left:auto; }
+.btn.active{ background:var(--ink); color:var(--paper); }
+.clan.sortable .clan-head{ cursor:grab; }
+.clan.sortable{ background:#00000005; border-radius:3px; }
 
 /* subbar */
 .subbar{ display:flex; align-items:center; gap:10px; margin:18px 0 14px; }
@@ -176,10 +179,10 @@ button{ font-family:inherit; cursor:pointer; }
   .tb-break{ display:block; flex-basis:100%; height:0; }
   .grid{ grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); }
   .sidebar{ position:fixed; top:0; right:0; height:100vh; width:min(82vw,300px);
-    transform:translateX(100%); transition:transform .22s ease; z-index:60; padding:18px 16px;
-    background:var(--paper); border-left:1.5px solid var(--ink); border-right:none;
-    box-shadow:-10px 0 26px #00000033; overflow:auto; }
-  .sidebar.open{ transform:none; }
+    z-index:60; padding:18px 16px; background:var(--paper);
+    border-left:1.5px solid var(--ink); border-right:none;
+    box-shadow:-10px 0 26px #00000033; overflow:auto; display:none; }
+  .sidebar.open{ display:block; }
 }
 </style>
 </head>
@@ -201,6 +204,7 @@ button{ font-family:inherit; cursor:pointer; }
       <button class="btn ghost menu-btn" id="menuBtn" title="カテゴリー" aria-label="カテゴリーメニュー">≡</button>
       <span class="tb-break"></span>
       <label class="toggle"><input type="checkbox" id="bySibling" checked /> 兄弟でまとめる</label>
+      <button class="btn ghost" id="sortBtn">並べ替え</button>
       <button class="btn" id="addChar">＋人物</button>
     </div>
     <div id="content"></div>
@@ -218,7 +222,7 @@ const CLAN_COLORS = [
   {name:"鴇",hex:"#CC7686"},{name:"鈍",hex:"#6E6A63"},
 ];
 let state = { cats:[], clans:[], chars:[] };
-let bySibling = true, query = "", selectedCat = "all";
+let bySibling = true, query = "", selectedCat = "all", sortMode = false;
 
 function uid(){
   try{ if(window.crypto && crypto.randomUUID) return crypto.randomUUID(); }catch(e){}
@@ -347,13 +351,14 @@ function siblingBlocks(list){
     </div>`).join("");
 }
 function clanHTML(clan, list){
-  const drag = clan ? `data-drag="clan" data-id="${clan.id}"` : "";
-  return `<section class="clan" ${drag}>
-    <div class="clan-head">
-      ${clan?`<span class="grip" data-grip>⠿</span>`:""}
+  const sortable = !!clan && sortMode;
+  const drag = sortable ? `data-drag="clan" data-id="${clan.id}"` : "";
+  return `<section class="clan ${sortable?'sortable':''}" ${drag}>
+    <div class="clan-head" ${sortable?'data-grip':''}>
+      ${sortable?`<span class="grip">⠿</span>`:""}
       <span class="seal" style="background:${esc(clan?.color||"#B7AE9D")}">${esc((clan?.name||"他").slice(0,1))}</span>
       <span class="clan-name">${esc(clan?.name||"未所属")}</span>
-      ${clan?`<button class="clan-edit" data-clan="${clan.id}">編集</button>`:""}
+      ${(clan && !sortMode)?`<button class="clan-edit" data-clan="${clan.id}">編集</button>`:""}
     </div>
     ${clan?.naming?`<p class="clan-rule">命名規則：${esc(clan.naming)}</p>`:""}
     ${clan?.note?`<p class="clan-note">${esc(clan.note)}</p>`:""}
@@ -626,6 +631,11 @@ function syncModal(){
 document.getElementById("syncBtn").onclick  = ()=> syncModal();
 document.getElementById("addCat").onclick  = ()=> catModal(null);
 document.getElementById("addChar").onclick = ()=> charModal(null);
+
+const sortBtn = document.getElementById("sortBtn");
+function updateSortBtn(){ sortBtn.textContent = sortMode ? "完了" : "並べ替え"; sortBtn.classList.toggle("active", sortMode); }
+sortBtn.onclick = ()=>{ sortMode = !sortMode; updateSortBtn(); render(); };
+updateSortBtn();
 document.getElementById("search").addEventListener("input", e=>{ query = e.target.value; renderMain(); });
 document.getElementById("bySibling").addEventListener("change", e=>{ bySibling = e.target.checked; renderMain(); });
 
