@@ -12,7 +12,8 @@
 *{ box-sizing:border-box; }
 html,body{ margin:0; }
 body{ font-family:'Zen Kaku Gothic New',sans-serif; color:var(--ink);
-  background:var(--paper); -webkit-font-smoothing:antialiased; }
+  background:var(--paper); -webkit-font-smoothing:antialiased; overflow-x:hidden; }
+body.no-scroll{ overflow:hidden; }
 button{ font-family:inherit; cursor:pointer; }
 
 /* ---- layout ---- */
@@ -28,7 +29,12 @@ button{ font-family:inherit; cursor:pointer; }
 .add-cat:hover{ background:var(--ink); color:var(--paper); }
 .cat-list{ display:flex; flex-direction:column; gap:2px; }
 .cat-item{ display:flex; align-items:center; gap:8px; width:100%; text-align:left; border:none;
-  background:none; padding:9px 10px; border-radius:3px; font-size:14px; color:var(--ink); }
+  background:none; padding:9px 10px; border-radius:3px; font-size:14px; color:var(--ink); cursor:pointer; }
+.cat-label{ flex:0 1 auto; }
+.grip,.grip-sp{ width:16px; flex:none; display:inline-flex; justify-content:center; }
+.grip{ cursor:grab; touch-action:none; color:var(--faint); font-size:14px; line-height:1; user-select:none; }
+.grip:active{ cursor:grabbing; }
+.dragging{ opacity:.45; }
 .cat-item:hover{ background:#0000000a; }
 .cat-item.on{ background:var(--sel); font-weight:700; }
 .cat-item .c{ margin-left:auto; font-size:11px; color:var(--faint); font-weight:400; }
@@ -45,6 +51,7 @@ button{ font-family:inherit; cursor:pointer; }
   border-radius:2px; font-size:13px; font-weight:500; letter-spacing:.03em; white-space:nowrap; }
 .btn.ghost{ background:transparent; color:var(--ink); }
 .btn.ghost:hover{ background:#0000000a; }
+.btn.sm{ padding:6px 9px; font-size:12px; letter-spacing:0; }
 .toggle{ display:inline-flex; align-items:center; gap:7px; font-size:12.5px; color:var(--soft);
   cursor:pointer; user-select:none; padding:6px 2px; white-space:nowrap; }
 .toggle input{ accent-color:var(--accent); width:15px; height:15px; }
@@ -142,16 +149,25 @@ button{ font-family:inherit; cursor:pointer; }
 .s-ok{ color:#2E7A5C; border:1px solid #2E7A5C; }
 .s-err{ color:#B5472E; border:1px solid #B5472E; }
 
-/* responsive: PCは左固定 / モバイルは上部の横スクロール */
+/* menu button + scrim (mobile drawer) */
+.menu-btn{ display:none; font-size:18px; line-height:1; padding:8px 12px; }
+.tb-break{ display:none; }
+.scrim{ position:fixed; inset:0; background:#2a242066; z-index:55; opacity:0;
+  pointer-events:none; transition:opacity .2s; }
+.scrim.show{ opacity:1; pointer-events:auto; }
+
+/* responsive: PCは左固定 / スマホは≡ドロワー・幅固定 */
 @media (max-width:720px){
-  .app{ flex-direction:column; }
-  .sidebar{ width:auto; height:auto; position:static; border-right:none;
-    border-bottom:1.5px solid var(--ink); padding:12px; }
-  .side-head{ margin-bottom:8px; }
-  .cat-list{ flex-direction:row; overflow-x:auto; gap:6px; padding-bottom:2px; }
-  .cat-item{ white-space:nowrap; border:1px solid var(--line); border-radius:999px; padding:7px 13px; }
-  .cat-item.on{ border-color:var(--ink); }
-  .cat-item .c{ display:none; }
+  .app{ display:block; max-width:100%; }
+  .main{ padding:14px 14px 90px; width:100%; }
+  .menu-btn{ display:inline-grid; place-items:center; margin-left:auto; }
+  .tb-break{ display:block; flex-basis:100%; height:0; }
+  .grid{ grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); }
+  .sidebar{ position:fixed; top:0; right:0; height:100vh; width:min(82vw,300px);
+    transform:translateX(100%); transition:transform .22s ease; z-index:60; padding:18px 16px;
+    background:var(--paper); border-left:1.5px solid var(--ink); border-right:none;
+    box-shadow:-10px 0 26px #00000033; overflow:auto; }
+  .sidebar.open{ transform:none; }
 }
 </style>
 </head>
@@ -167,14 +183,17 @@ button{ font-family:inherit; cursor:pointer; }
   <main class="main">
     <div class="topbar">
       <input id="search" class="search" placeholder="名前・一族・続柄で検索" />
+      <button class="btn ghost menu-btn" id="menuBtn" title="カテゴリー" aria-label="カテゴリーメニュー">≡</button>
+      <span class="tb-break"></span>
       <label class="toggle"><input type="checkbox" id="bySibling" checked /> 兄弟でまとめる</label>
-      <button class="btn ghost" id="syncBtn" title="GitHubで同期">☁ 同期</button>
+      <button class="btn ghost sm" id="syncBtn" title="GitHubで同期">☁同期</button>
       <span class="sync-stat s-idle" id="syncStat">ローカル保存</span>
       <button class="btn" id="addChar">＋人物</button>
     </div>
     <div id="content"></div>
   </main>
 </div>
+<div class="scrim" id="scrim"></div>
 
 <script>
 /* ---------------- 定数・状態 ---------------- */
@@ -308,8 +327,10 @@ function siblingBlocks(list){
     </div>`).join("");
 }
 function clanHTML(clan, list){
-  return `<section class="clan">
+  const drag = clan ? `data-drag="clan" data-id="${clan.id}"` : "";
+  return `<section class="clan" ${drag}>
     <div class="clan-head">
+      ${clan?`<span class="grip" data-grip>⠿</span>`:""}
       <span class="seal" style="background:${esc(clan?.color||"#B7AE9D")}">${esc((clan?.name||"他").slice(0,1))}</span>
       <span class="clan-name">${esc(clan?.name||"未所属")}</span>
       <span class="count">${list.length}人</span>
@@ -325,14 +346,17 @@ function clanHTML(clan, list){
 function renderSidebar(){
   const el = document.getElementById("catList");
   const cc = clanCountByCat();
-  let html = `<button class="cat-item ${selectedCat==='all'?'on':''}" data-sel="all">すべて<span class="c">${state.clans.length}</span></button>`;
-  state.cats.forEach(c=>{
-    html += `<button class="cat-item ${selectedCat===c.id?'on':''}" data-sel="${c.id}">${esc(c.name)}<span class="c">${cc[c.id]||0}</span></button>`;
-  });
+  const row = (sel, label, count, drag) =>
+    `<div class="cat-item ${selectedCat===sel?'on':''}" data-sel="${sel}" ${drag?`data-drag="cat" data-id="${sel}"`:""}>
+       ${drag?`<span class="grip" data-grip>⠿</span>`:`<span class="grip-sp"></span>`}
+       <span class="cat-label">${esc(label)}</span><span class="c">${count}</span>
+     </div>`;
+  let html = row("all", "すべて", state.clans.length, false);
+  state.cats.forEach(c=> html += row(c.id, c.name, cc[c.id]||0, true));
   const orphanClans = state.clans.filter(c=>!c.catId).length;
   const orphanChars = state.chars.filter(ch=>!ch.clanId).length;
   if(state.cats.length===0 || orphanClans || orphanChars){
-    html += `<button class="cat-item ${selectedCat===NO?'on':''}" data-sel="${NO}">未分類<span class="c">${orphanClans}</span></button>`;
+    html += row(NO, "未分類", orphanClans, false);
   }
   el.innerHTML = html;
 }
@@ -533,7 +557,7 @@ function syncModal(){
   const ovl = openModal(`
     <div class="modal-head"><h3>GitHubで同期</h3><button class="x" data-close>×</button></div>
     <div class="mbody">
-      <p class="hint" style="padding:0 0 12px">PCとスマホで同じデータを編集できます。各端末で同じ<b>アクセストークン</b>（gist権限）と<b>Gist ID</b>を設定してください。最初の端末で「新規Gist作成」を押し、表示されたGist IDを他の端末に入力します。</p>
+      <p class="hint" style="padding:0 0 12px">PCとスマホで同じデータを編集できます。最初の端末はGist IDを空欄のまま<b>接続</b>すると新しいGistが作られます。表示されたGist IDを、他の端末で同じ<b>トークン</b>と一緒に入力して<b>接続</b>してください。接続後の編集は<b>自動で保存</b>されます。</p>
       <div class="field"><label>アクセストークン（gist権限）</label>
         <input class="in" id="s_token" type="password" placeholder="ghp_..." value="${esc(sync.token)}" /></div>
       <div class="field"><label>Gist ID（空欄なら新規作成）</label>
@@ -543,9 +567,8 @@ function syncModal(){
     <div class="mactions" style="flex-wrap:wrap; gap:8px">
       <button class="link" id="s_disc">切断</button>
       <span class="spacer"></span>
-      <button class="btn ghost" id="s_create">新規Gist作成</button>
-      <button class="btn ghost" id="s_pull">読込</button>
-      <button class="btn" id="s_push">保存</button>
+      <button class="btn ghost sm" id="s_pull">今すぐ読込</button>
+      <button class="btn" id="s_connect">接続</button>
     </div>`);
   const st = ovl.querySelector("#s_status");
   const say = (m, err)=>{ st.textContent = m; st.style.color = err ? "#B5472E" : "var(--accent)"; };
@@ -553,12 +576,18 @@ function syncModal(){
                      sync.gistId = ovl.querySelector("#s_gist").value.trim(); };
   const persist = async ()=>{ await storeSet(TKEY, sync.token); await storeSet(GKEY, sync.gistId); };
 
-  ovl.querySelector("#s_create").onclick = async ()=>{
+  ovl.querySelector("#s_connect").onclick = async ()=>{
     grab(); if(!sync.token){ say("トークンを入力してください", true); return; }
-    say("作成中…");
-    try{ sync.gistId = await ghCreate(); ovl.querySelector("#s_gist").value = sync.gistId;
-      await persist(); setSync("ok"); say("作成しました。Gist ID：" + sync.gistId); }
-    catch(e){ setSync("error", e.message); say(e.message, true); }
+    say("接続中…");
+    try{
+      await persist();
+      if(sync.gistId){
+        const d = await ghPull(); applyData(d); await storeSet(KEY, dataJSON()); render();
+      }else{
+        sync.gistId = await ghCreate(); ovl.querySelector("#s_gist").value = sync.gistId; await persist();
+      }
+      setSync("ok"); say("接続しました。以降の編集は自動保存されます。Gist ID：" + sync.gistId);
+    }catch(e){ setSync("error", e.message); say(e.message, true); }
   };
   ovl.querySelector("#s_pull").onclick = async ()=>{
     grab(); if(!(sync.token && sync.gistId)){ say("トークンとGist IDが必要です", true); return; }
@@ -566,15 +595,6 @@ function syncModal(){
     try{ const d = await ghPull(); applyData(d); await storeSet(KEY, dataJSON()); render();
       setSync("ok"); say("クラウドから読み込みました"); }
     catch(e){ setSync("error", e.message); say(e.message, true); }
-  };
-  ovl.querySelector("#s_push").onclick = async ()=>{
-    grab(); if(!sync.token){ say("トークンを入力してください", true); return; }
-    await persist(); say("保存中…");
-    try{
-      if(!sync.gistId){ sync.gistId = await ghCreate(); ovl.querySelector("#s_gist").value = sync.gistId; await persist(); }
-      else { await ghPush(); }
-      setSync("ok"); say("クラウドへ保存しました");
-    }catch(e){ setSync("error", e.message); say(e.message, true); }
   };
   ovl.querySelector("#s_disc").onclick = async ()=>{
     sync.token=""; sync.gistId=""; await persist(); setSync("idle");
@@ -591,11 +611,13 @@ document.getElementById("search").addEventListener("input", e=>{ query = e.targe
 document.getElementById("bySibling").addEventListener("change", e=>{ bySibling = e.target.checked; renderMain(); });
 
 document.getElementById("catList").addEventListener("click", e=>{
+  if(e.target.closest("[data-grip]")) return;
   const b = e.target.closest("[data-sel]");
-  if(b){ selectedCat = b.dataset.sel; render(); }
+  if(b){ selectedCat = b.dataset.sel; closeDrawer(); render(); }
 });
 
 document.getElementById("content").addEventListener("click", e=>{
+  if(e.target.closest("[data-grip]")) return;
   const ch = e.target.closest("[data-char]"); if(ch){ charModal(state.chars.find(x=>x.id===ch.dataset.char)); return; }
   const cl = e.target.closest("[data-clan]"); if(cl){ clanModal(state.clans.find(x=>x.id===cl.dataset.clan)); return; }
   const ca = e.target.closest("[data-cat]"); if(ca){ catModal(state.cats.find(x=>x.id===ca.dataset.cat)); return; }
@@ -606,6 +628,60 @@ document.getElementById("content").addEventListener("click", e=>{
     }
   }
 });
+
+/* ---------------- ドロワー（スマホのカテゴリーメニュー） ---------------- */
+const sidebarEl = document.querySelector(".sidebar");
+const scrimEl = document.getElementById("scrim");
+function openDrawer(){ sidebarEl.classList.add("open"); scrimEl.classList.add("show"); document.body.classList.add("no-scroll"); }
+function closeDrawer(){ sidebarEl.classList.remove("open"); scrimEl.classList.remove("show"); document.body.classList.remove("no-scroll"); }
+document.getElementById("menuBtn").onclick = ()=> sidebarEl.classList.contains("open") ? closeDrawer() : openDrawer();
+scrimEl.onclick = closeDrawer;
+
+/* ---------------- ドラッグ並べ替え（カテゴリー・一族 / マウス＆タッチ） ---------------- */
+let drag = null;
+function reorderSubset(arr, orderedIds){
+  const set = new Set(orderedIds);
+  const pos = []; arr.forEach((x,i)=>{ if(set.has(x.id)) pos.push(i); });
+  const byId = Object.fromEntries(arr.map(x=>[x.id,x]));
+  orderedIds.forEach((id,k)=>{ arr[pos[k]] = byId[id]; });
+}
+function dragSiblings(){
+  return [...drag.container.querySelectorAll(":scope > [data-drag='"+drag.type+"']")];
+}
+function onPtrDown(e){
+  const grip = e.target.closest("[data-grip]"); if(!grip) return;
+  const item = grip.closest("[data-drag]"); if(!item) return;
+  e.preventDefault();
+  drag = { item, container:item.parentElement, type:item.dataset.drag };
+  item.classList.add("dragging");
+  try{ grip.setPointerCapture(e.pointerId); }catch(_){}
+  window.addEventListener("pointermove", onPtrMove);
+  window.addEventListener("pointerup", onPtrUp, { once:true });
+}
+function onPtrMove(e){
+  if(!drag) return;
+  const sibs = dragSiblings().filter(x=>x!==drag.item);
+  let placed = false;
+  for(const s of sibs){
+    const r = s.getBoundingClientRect();
+    if(e.clientY < r.top + r.height/2){ drag.container.insertBefore(drag.item, s); placed = true; break; }
+  }
+  if(!placed){
+    const last = sibs[sibs.length-1];
+    if(last) drag.container.insertBefore(drag.item, last.nextSibling);
+  }
+}
+function onPtrUp(){
+  window.removeEventListener("pointermove", onPtrMove);
+  if(!drag) return;
+  drag.item.classList.remove("dragging");
+  const ids = dragSiblings().map(x=>x.dataset.id);
+  if(drag.type==="cat") reorderSubset(state.cats, ids);
+  else reorderSubset(state.clans, ids);
+  drag = null;
+  save(); render();
+}
+document.addEventListener("pointerdown", onPtrDown);
 
 load();
 </script>
