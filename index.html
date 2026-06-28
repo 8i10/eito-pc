@@ -52,9 +52,21 @@ button{ font-family:inherit; cursor:pointer; }
 .btn.ghost{ background:transparent; color:var(--ink); }
 .btn.ghost:hover{ background:#0000000a; }
 .btn.sm{ padding:6px 9px; font-size:12px; letter-spacing:0; }
+
+/* sync bar (above search) */
+.sync-bar{ display:flex; align-items:center; justify-content:center; gap:8px; width:100%;
+  padding:8px 12px; margin:0 0 12px; border-radius:999px; background:var(--card);
+  font-family:'JetBrains Mono',monospace; font-size:12px; line-height:1; cursor:pointer; }
+.sync-bar:hover{ background:#0000000a; }
+.sync-bar .sync-ico{ font-size:13px; }
+.sync-bar.s-idle{ color:var(--faint); border:1px solid var(--line); }
+.sync-bar.s-go{ color:var(--accent); border:1px solid var(--accent); }
+.sync-bar.s-ok{ color:#2E7A5C; border:1px solid #2E7A5C; }
+.sync-bar.s-err{ color:#B5472E; border:1px solid #B5472E; }
 .toggle{ display:inline-flex; align-items:center; gap:7px; font-size:12.5px; color:var(--soft);
   cursor:pointer; user-select:none; padding:6px 2px; white-space:nowrap; }
 .toggle input{ accent-color:var(--accent); width:15px; height:15px; }
+#addChar{ margin-left:auto; }
 
 /* subbar */
 .subbar{ display:flex; align-items:center; gap:10px; margin:18px 0 14px; }
@@ -139,7 +151,7 @@ button{ font-family:inherit; cursor:pointer; }
 .sw-pick input{ position:absolute; inset:0; opacity:0; cursor:pointer; padding:0; border:none; }
 
 /* naming rule line */
-.clan-rule{ font-size:11.5px; color:var(--accent); margin:7px 0 0; font-weight:500; }
+.clan-rule{ font-size:11.5px; color:rgba(50,74,94,.62); margin:7px 0 0; font-weight:500; }
 
 /* sync status pill */
 .sync-stat{ font-size:11px; font-family:'JetBrains Mono',monospace; padding:4px 9px;
@@ -181,13 +193,14 @@ button{ font-family:inherit; cursor:pointer; }
     <div class="cat-list" id="catList"></div>
   </aside>
   <main class="main">
+    <button class="sync-bar s-idle" id="syncBtn" title="GitHubで同期">
+      <span class="sync-ico">☁</span><span id="syncStat">ローカル保存</span>
+    </button>
     <div class="topbar">
       <input id="search" class="search" placeholder="名前・一族・続柄で検索" />
       <button class="btn ghost menu-btn" id="menuBtn" title="カテゴリー" aria-label="カテゴリーメニュー">≡</button>
       <span class="tb-break"></span>
       <label class="toggle"><input type="checkbox" id="bySibling" checked /> 兄弟でまとめる</label>
-      <button class="btn ghost sm" id="syncBtn" title="GitHubで同期">☁同期</button>
-      <span class="sync-stat s-idle" id="syncStat">ローカル保存</span>
       <button class="btn" id="addChar">＋人物</button>
     </div>
     <div id="content"></div>
@@ -236,11 +249,18 @@ function applyData(d){ state = { cats:d.cats||[], clans:d.clans||[], chars:d.cha
 
 function setSync(st, msg){ sync.st=st; sync.msg=msg||""; renderSyncStat(); }
 function renderSyncStat(){
-  const el = document.getElementById("syncStat"); if(!el) return;
-  if(!(sync.token && sync.gistId)){ el.className="sync-stat s-idle"; el.textContent="ローカル保存"; el.title=""; return; }
-  const map = { idle:["待機","s-idle"], syncing:["同期中…","s-go"], ok:["同期済み","s-ok"], error:["同期エラー","s-err"] };
-  const m = map[sync.st] || map.idle;
-  el.className = "sync-stat "+m[1]; el.textContent = m[0]; el.title = sync.msg||"";
+  const bar = document.getElementById("syncBtn");
+  const el = document.getElementById("syncStat");
+  if(!bar || !el) return;
+  let label, cls;
+  if(!(sync.token && sync.gistId)){ cls="s-idle"; label="ローカル保存（タップでGitHub同期）"; }
+  else {
+    const map = { idle:["待機","s-idle"], syncing:["同期中…","s-go"], ok:["同期済み","s-ok"], error:["同期エラー","s-err"] };
+    const m = map[sync.st] || map.idle; label = m[0]; cls = m[1];
+  }
+  bar.className = "sync-bar " + cls;
+  el.textContent = label;
+  bar.title = sync.msg || "GitHubで同期";
 }
 
 function ghHeaders(){ return {
@@ -333,7 +353,6 @@ function clanHTML(clan, list){
       ${clan?`<span class="grip" data-grip>⠿</span>`:""}
       <span class="seal" style="background:${esc(clan?.color||"#B7AE9D")}">${esc((clan?.name||"他").slice(0,1))}</span>
       <span class="clan-name">${esc(clan?.name||"未所属")}</span>
-      <span class="count">${list.length}人</span>
       ${clan?`<button class="clan-edit" data-clan="${clan.id}">編集</button>`:""}
     </div>
     ${clan?.naming?`<p class="clan-rule">命名規則：${esc(clan.naming)}</p>`:""}
